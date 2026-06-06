@@ -24,7 +24,7 @@ def draw_dependency_graph(graph: nx.DiGraph, title: str = "") -> plt.Figure:
 
     # show directed edges (head -> dependent) with arrows and labels
     edge_labels = {(u, v): data.get("label") or data.get("dep") for u, v, data in graph.edges(data=True)}
-    nx.draw_networkx_edges(graph, pos, arrowstyle="-|>", arrowsize=18, ax=ax, arrows=True)
+    nx.draw_networkx_edges(graph, pos, arrowstyle="-|>", arrowsize=25, width=2.5, edge_color="#333", ax=ax, arrows=True)
     nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels, font_size=8, ax=ax)
 
     return fig
@@ -145,12 +145,12 @@ def draw_evolution_graph(source: nx.DiGraph, target: nx.DiGraph, node_diff: dict
 
     # Draw dependency edges with arrows (head -> dependent)
     if dep_edges:
-        nx.draw_networkx_edges(G, pos, edgelist=dep_edges, arrowstyle="-|>", arrowsize=14, edge_color=dep_edge_colors, ax=ax, arrows=True)
+        nx.draw_networkx_edges(G, pos, edgelist=dep_edges, arrowstyle="-|>", arrowsize=16, width=2.0, edge_color=dep_edge_colors, ax=ax, arrows=True)
 
     # Draw match edges as dashed lines without arrows to show alignment between old/new
     match_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("status") == "match"]
     if match_edges:
-        nx.draw_networkx_edges(G, pos, edgelist=match_edges, style="dashed", edge_color=edge_color_map.get("match"), ax=ax, arrows=False)
+        nx.draw_networkx_edges(G, pos, edgelist=match_edges, style="dashed", width=1.5, edge_color=edge_color_map.get("match"), ax=ax, arrows=False)
 
     # Edge labels use 'label' (or 'dep')
     edge_labels = {(u, v): d.get("label") or d.get("dep") for u, v, d in G.edges(data=True)}
