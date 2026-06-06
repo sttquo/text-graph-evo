@@ -8,7 +8,7 @@ from textgraph.report import (
     build_change_metrics,
     build_token_changes_table,
     build_edge_changes_table,
-    build_human_summary,
+    build_factual_summary,
 )
 
 st.set_page_config(page_title="Text Graph Evolution", layout="wide")
@@ -116,8 +116,8 @@ if st.button("Проанализировать"):
         st.write("Изменений связей не обнаружено.")
 
     # --- Интерпретация ---
-    st.markdown("## Интерпретация")
-    summary_text = build_human_summary(node_diff, edge_diff, source_graph, target_graph)
+    st.markdown("## Автоматическое описание изменений")
+    summary_text = build_factual_summary(node_diff, edge_diff, source_graph, target_graph)
     st.info(summary_text)
 
     # --- Загрузка отчёта ---

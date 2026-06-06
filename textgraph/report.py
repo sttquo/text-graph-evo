@@ -217,62 +217,89 @@ def build_edge_changes_table(edge_diff: dict, source_graph: nx.DiGraph, target_g
     return rows
 
 
-def build_human_summary(node_diff: dict, edge_diff: dict, source_graph: nx.DiGraph, target_graph: nx.DiGraph) -> str:
-    """Генерирует человекочитаемую интерпретацию изменений."""
-    lines = []
+def build_factual_summary(node_diff: dict, edge_diff: dict, source_graph: nx.DiGraph, target_graph: nx.DiGraph) -> str:
+    """Генерирует фактическое описание структурных изменений (только данные из diff)."""
     
-    # Определяем ROOT узлы (фактические корни)
-    source_roots = [idx for idx, data in source_graph.nodes(data=True) if data.get("is_root", False)]
-    target_roots = [idx for idx, data in target_graph.nodes(data=True) if data.get("is_root", False)]
-    
-    # Проверяем, сохранился ли ROOT
-    role_changes = node_diff.get("role_changes", [])
-    root_changed = any(
-        r.get("source_dep") == "ROOT" or r.get("target_dep") == "ROOT"
-        for r in role_changes
-    )
-    
-    if not root_changed and source_roots and target_roots:
-        lines.append("Основная структура предложения сохранилась: корневой предикат остался центром высказывания.")
-    elif root_changed:
-        lines.append("Центр высказывания изменился: корневой предикат или его роль в предложении была переопределена.")
-    
-    # Подсчитаем типы зависимостей
-    added_edges = edge_diff.get("added", [])
-    removed_edges = edge_diff.get("removed", [])
-    changed_edges = edge_diff.get("changed", [])
-    
-    added_deps = {item.get("target_dep") for item in added_edges}
-    removed_deps = {item.get("source_dep") for item in removed_edges}
-    changed_deps = {item.get("source_dep") for item in changed_edges}
-    
-    # Анализируем изменения признаков объектов
-    if "amod" in added_deps:
-        lines.append("Добавлены новые признаки или уточнения объекта.")
-    
-    # Анализируем обстоятельства
-    if "advmod" in added_deps or "obl" in added_deps:
-        lines.append("Добавлены новые обстоятельства или детали события.")
-    if "advmod" in removed_deps or "obl" in removed_deps:
-        lines.append("Удалены обстоятельства или уточняющие детали.")
-    
-    # Анализируем основные участники события
-    nsubj_changed = any(r.get("source_dep") == "nsubj" or r.get("target_dep") == "nsubj" for r in role_changes)
-    obj_changed = any(r.get("source_dep") == "obj" or r.get("target_dep") == "obj" for r in role_changes)
-    
-    if nsubj_changed or obj_changed:
-        lines.append("Изменились основные участники события: подлежащее или дополнение переопределены.")
-    
-    # Подсчитаем количество изменений
+    # Метрики
     n_saved = len(node_diff.get("common", []))
     n_changed = len(node_diff.get("changed", []))
     n_added = len(node_diff.get("added", []))
     n_removed = len(node_diff.get("removed", []))
     
-    if n_saved > 0:
-        lines.append(f"При редактировании сохранилось {n_saved} токен(ов), добавлено {n_added}, удалено {n_removed}.")
+    e_saved = len(edge_diff.get("common", []))
+    e_changed = len(edge_diff.get("changed", []))
+    e_added = len(edge_diff.get("added", []))
+    e_removed = len(edge_diff.get("removed", []))
     
-    if not lines:
-        lines.append("Граф предложения претерпел изменения. Детали см. в таблицах выше.")
+    # Проверяем, есть ли вообще изменения
+    total_changes = n_changed + n_added + n_removed + e_changed + e_added + e_removed
+    
+    if total_changes == 0:
+        return "Структурных изменений не обнаружено: токены и dependency-связи совпадают."
+    
+    lines = []
+    
+    # Определяем тип редактирования
+    has_additions = n_added > 0 or e_added > 0
+    has_removals = n_removed > 0 or e_removed > 0
+    
+    if has_additions and has_removals:
+        lines.append("Текст был отредактирован: часть элементов удалена, часть добавлена.")
+    elif has_additions and not has_removals:
+        lines.append("В изменённом тексте появились новые элементы и новые dependency-связи.")
+    elif has_removals and not has_additions:
+        lines.append("Из исходного текста были удалены элементы и связанные с ними dependency-связи.")
+    
+    # Основная статистика
+    lines.append(f"При редактировании сохранено {n_saved} токен(ов), добавлено {n_added}, удалено {n_removed}.")
+    lines.append(f"Сохранено {e_saved} синтаксических связей, добавлено {e_added}, удалено {e_removed}.")
+    
+    # Детали добавленных токенов
+    added_tokens = node_diff.get("added", [])
+    if added_tokens:
+        added_text = ", ".join([item.get("text", "?") for item in added_tokens])
+        lines.append(f"Добавленные токены: {added_text}.")
+    
+    # Детали удалённых токенов
+    removed_tokens = node_diff.get("removed", [])
+    if removed_tokens:
+        removed_text = ", ".join([item.get("text", "?") for item in removed_tokens])
+        lines.append(f"Удалённые токены: {removed_text}.")
+    
+    # Детали добавленных связей
+    added_edges = edge_diff.get("added", [])
+    if added_edges:
+        edge_strs = []
+        for item in added_edges:
+            tgt_edge = item.get("target_edge", (None, None))
+            tgt_dep = item.get("target_dep", "?")
+            tgt_u, tgt_v = tgt_edge
+            
+            if tgt_u in target_graph.nodes and tgt_v in target_graph.nodes:
+                tgt_u_text = target_graph.nodes[tgt_u].get("text", "?")
+                tgt_v_text = target_graph.nodes[tgt_v].get("text", "?")
+                edge_strs.append(f"{tgt_u_text} → {tgt_v_text} ({tgt_dep})")
+        
+        if edge_strs:
+            added_edges_text = ", ".join(edge_strs)
+            lines.append(f"Добавленные связи: {added_edges_text}.")
+    
+    # Детали удалённых связей
+    removed_edges = edge_diff.get("removed", [])
+    if removed_edges:
+        edge_strs = []
+        for item in removed_edges:
+            src_edge = item.get("source_edge", (None, None))
+            src_dep = item.get("source_dep", "?")
+            src_u, src_v = src_edge
+            
+            if src_u in source_graph.nodes and src_v in source_graph.nodes:
+                src_u_text = source_graph.nodes[src_u].get("text", "?")
+                src_v_text = source_graph.nodes[src_v].get("text", "?")
+                edge_strs.append(f"{src_u_text} → {src_v_text} ({src_dep})")
+        
+        if edge_strs:
+            removed_edges_text = ", ".join(edge_strs)
+            lines.append(f"Удалённые связи: {removed_edges_text}.")
     
     return " ".join(lines)
