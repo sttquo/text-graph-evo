@@ -12,6 +12,7 @@ class DependencyGraphBuilder:
         for token in doc:
             graph.add_node(
                 token.i,
+                idx=token.i,
                 text=token.text,
                 lemma=token.lemma_,
                 pos=token.pos_,
@@ -23,6 +24,8 @@ class DependencyGraphBuilder:
 
         for token in doc:
             if token.dep_ != "ROOT":
-                graph.add_edge(token.head.i, token.i, dep=token.dep_)
+                # Edge direction: head -> dependent (head token points to its dependent)
+                # store dependency label both as 'dep' and 'label' for convenient visualization
+                graph.add_edge(token.head.i, token.i, dep=token.dep_, label=token.dep_)
 
         return graph
