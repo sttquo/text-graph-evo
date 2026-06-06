@@ -3,7 +3,13 @@ import datetime
 from textgraph.analyzer import TextGraphAnalyzer
 from textgraph.nlp import NLPProcessor
 from textgraph.graph_builder import DependencyGraphBuilder
-from textgraph.visualizer import draw_dependency_graph, draw_evolution_graph
+from textgraph.visualizer import draw_dependency_graph
+from textgraph.report import (
+    build_change_metrics,
+    build_token_changes_table,
+    build_edge_changes_table,
+    build_human_summary,
+)
 
 st.set_page_config(page_title="Text Graph Evolution", layout="wide")
 
@@ -30,6 +36,8 @@ if st.button("Проанализировать"):
     source_graph = DependencyGraphBuilder.build_from_doc(source_doc)
     target_graph = DependencyGraphBuilder.build_from_doc(target_doc)
 
+    # --- Графы зависимостей ---
+    st.markdown("## Графы зависимостей")
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Граф исходного текста")
@@ -39,84 +47,87 @@ if st.button("Проанализировать"):
         st.subheader("Граф изменённого текста")
         fig2 = draw_dependency_graph(target_graph, title="Изменённый текст")
         st.pyplot(fig2)
-    st.subheader("Граф эволюции")
-    fig3 = draw_evolution_graph(source_graph, target_graph, result["node_diff"], result["edge_diff"], title="Эволюция графа")
-    st.pyplot(fig3)
 
-    st.subheader("Отчёт об изменениях")
-    report_text = result["report"]
-    st.text(report_text)
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    st.download_button("Скачать отчёт (.txt)", data=report_text, file_name=f"report_{timestamp}.txt", mime="text/plain")
+    # --- Сводка изменений ---
+    st.markdown("## Краткая сводка изменений")
+    node_diff = result.get("node_diff", {})
+    edge_diff = result.get("edge_diff", {})
+    metrics = build_change_metrics(node_diff, edge_diff)
 
-    st.subheader("Выравнивание токенов (source_idx -> target_idx)")
-    alignment = result.get("alignment", [])
-    if alignment:
-        rows = []
-        for item in alignment:
-            if isinstance(item, dict):
-                rows.append({"source_idx": item.get("source_idx"), "target_idx": item.get("target_idx"), "method": item.get("method"), "score": item.get("score")})
-            else:
-                try:
-                    a, b = item
-                except Exception:
-                    continue
-                rows.append({"source_idx": a, "target_idx": b})
-        if rows:
-            st.table(rows)
-        else:
-            st.write("Совпадений не найдено")
+    # Три столбца для ключевых метрик
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Токены (сохранено)", metrics["nodes_saved"])
+    with col2:
+        st.metric("Токены (изменено)", metrics["nodes_changed"])
+    with col3:
+        st.metric("Токены (добавлено)", metrics["nodes_added"])
+    with col4:
+        st.metric("Токены (удалено)", metrics["nodes_removed"])
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Связи (сохранено)", metrics["edges_saved"])
+    with col2:
+        st.metric("Связи (изменено)", metrics["edges_changed"])
+    with col3:
+        st.metric("Связи (добавлено)", metrics["edges_added"])
+    with col4:
+        st.metric("Связи (удалено)", metrics["edges_removed"])
+
+    # --- Таблица изменений токенов ---
+    st.markdown("## Изменения токенов")
+    token_rows = build_token_changes_table(node_diff, source_graph, target_graph)
+    if token_rows:
+        st.dataframe(
+            token_rows,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Тип изменения": st.column_config.Column(width="auto"),
+                "Было": st.column_config.Column(width="auto"),
+                "Стало": st.column_config.Column(width="auto"),
+                "Лемма": st.column_config.Column(width="auto"),
+                "Часть речи": st.column_config.Column(width="auto"),
+                "Синтаксическая роль": st.column_config.Column(width="auto"),
+                "Комментарий": st.column_config.Column(width="auto"),
+            },
+        )
     else:
-        st.write("Совпадений не найдено")
+        st.write("Изменений токенов не обнаружено.")
 
-    # Detailed lists
-    nd = result.get("node_diff", {})
-    ed = result.get("edge_diff", {})
+    # --- Таблица изменений связей ---
+    st.markdown("## Изменения связей")
+    edge_rows = build_edge_changes_table(edge_diff, source_graph, target_graph)
+    if edge_rows:
+        st.dataframe(
+            edge_rows,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Тип изменения": st.column_config.Column(width="auto"),
+                "Было": st.column_config.Column(width="auto"),
+                "Стало": st.column_config.Column(width="auto"),
+                "Тип зависимости": st.column_config.Column(width="auto"),
+                "Комментарий": st.column_config.Column(width="auto"),
+            },
+        )
+    else:
+        st.write("Изменений связей не обнаружено.")
 
-    st.subheader("Детали изменений")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Изменённые узлы**")
-        changed = nd.get("changed", [])
-        if changed:
-            st.table([
-                {
-                    "source_idx": it.get("source_idx"),
-                    "target_idx": it.get("target_idx"),
-                    "from": it.get("source_text"),
-                    "to": it.get("target_text"),
-                    "lemma": it.get("lemma"),
-                    "pos": it.get("pos"),
-                }
-                for it in changed
-            ])
-        else:
-            st.write("-")
+    # --- Интерпретация ---
+    st.markdown("## Интерпретация")
+    summary_text = build_human_summary(node_diff, edge_diff, source_graph, target_graph)
+    st.info(summary_text)
 
-        st.markdown("**Добавленные узлы**")
-        added = nd.get("added", [])
-        if added:
-            st.table([
-                {"idx": it.get("idx"), "text": it.get("text"), "lemma": it.get("lemma"), "pos": it.get("pos")} for it in added
-            ])
-        else:
-            st.write("-")
-
-    with c2:
-        st.markdown("**Удалённые узлы**")
-        removed = nd.get("removed", [])
-        if removed:
-            st.table([
-                {"idx": it.get("idx"), "text": it.get("text"), "lemma": it.get("lemma"), "pos": it.get("pos")} for it in removed
-            ])
-        else:
-            st.write("-")
-
-        st.markdown("**Изменённые рёбра (примеры)**")
-        changed_e = ed.get("changed", [])
-        if changed_e:
-            st.table([
-                {"src": str(it.get("source_edge")), "tgt": str(it.get("target_edge")), "from": it.get("source_dep"), "to": it.get("target_dep")} for it in changed_e
-            ])
-        else:
-            st.write("-")
+    # --- Загрузка отчёта ---
+    st.markdown("## Экспорт")
+    report_text = result.get("report", "")
+    if report_text:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        st.download_button(
+            "Скачать полный отчёт (.txt)",
+            data=report_text,
+            file_name=f"report_{timestamp}.txt",
+            mime="text/plain",
+        )
