@@ -80,6 +80,17 @@ def draw_evolution_graph(source: nx.DiGraph, target: nx.DiGraph, node_diff: dict
         if G.has_edge(key_u, key_v):
             G.edges[key_u, key_v]["status"] = "changed"
 
+    # Add match edges between old and new nodes to show token alignment
+    # These are auxiliary undirected/dashed edges of type 'match' (old_idx -> new_idx)
+    for item in node_diff.get("common", []) + node_diff.get("changed", []):
+        src_idx = item.get("source_idx")
+        tgt_idx = item.get("target_idx")
+        old_key = f"old_{src_idx}"
+        new_key = f"new_{tgt_idx}"
+        if G.has_node(old_key) and G.has_node(new_key):
+            # match edges connect the corresponding tokens across versions
+            G.add_edge(old_key, new_key, dep="match", label="match", status="match")
+
     # Visualization
     fig, ax = plt.subplots(figsize=(12, 7))
     ax.set_title(title)
@@ -125,11 +136,23 @@ def draw_evolution_graph(source: nx.DiGraph, target: nx.DiGraph, node_diff: dict
     nx.draw_networkx_nodes(G, pos, node_color=node_colors, edgecolors="#333", node_size=1400, ax=ax)
     nx.draw_networkx_labels(G, pos, labels=labels, font_size=8, ax=ax)
 
-    # edges with colors — keep direction head -> dependent
-    edge_color_map = {"common": "#555555", "changed": "#ff9900", "added": "#2e7d32", "removed": "#cc0000"}
-    edge_colors = [edge_color_map.get(d.get("status", "common"), "#000") for _, _, d in G.edges(data=True)]
-    nx.draw_networkx_edges(G, pos, arrowstyle="-|>", arrowsize=14, edge_color=edge_colors, ax=ax, arrows=True)
+    # edges with colors — keep direction head -> dependent for dependency edges
+    edge_color_map = {"common": "#555555", "changed": "#ff9900", "added": "#2e7d32", "removed": "#cc0000", "match": "#888888"}
 
+    # Separate dependency edges (status != 'match') and match edges (status == 'match')
+    dep_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("status") != "match"]
+    dep_edge_colors = [edge_color_map.get(G.edges[u, v].get("status", "common"), "#000") for u, v in dep_edges]
+
+    # Draw dependency edges with arrows (head -> dependent)
+    if dep_edges:
+        nx.draw_networkx_edges(G, pos, edgelist=dep_edges, arrowstyle="-|>", arrowsize=14, edge_color=dep_edge_colors, ax=ax, arrows=True)
+
+    # Draw match edges as dashed lines without arrows to show alignment between old/new
+    match_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("status") == "match"]
+    if match_edges:
+        nx.draw_networkx_edges(G, pos, edgelist=match_edges, style="dashed", edge_color=edge_color_map.get("match"), ax=ax, arrows=False)
+
+    # Edge labels use 'label' (or 'dep')
     edge_labels = {(u, v): d.get("label") or d.get("dep") for u, v, d in G.edges(data=True)}
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=7, ax=ax)
 
